@@ -163,6 +163,8 @@ namespace WpfAppBar
             barData.cbSize = Marshal.SizeOf(barData);
             barData.hWnd = new WindowInteropHelper(appbarWindow).Handle;
             barData.uEdge = (int)edge;
+            var screen = System.Windows.Forms.Screen.FromHandle(barData.hWnd);
+            var screenBounds = screen.Bounds;
 
             // Transforms a coordinate from WPF space to Screen space
             var toPixel = PresentationSource.FromVisual(appbarWindow).CompositionTarget.TransformToDevice;
@@ -174,38 +176,13 @@ namespace WpfAppBar
             // Even if the documentation says SystemParameters.PrimaryScreen{Width, Height} return values in 
             // "pixels", they return wpf units instead.
             var screenSizeInPixels =
-                toPixel.Transform(new Vector(SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight));
+                toPixel.Transform(new Vector(screenBounds.Width, screenBounds.Height));
 
-            if (barData.uEdge == (int)ABEdge.Left || barData.uEdge == (int)ABEdge.Right)
-            {
-                barData.rc.top = 0;
-                barData.rc.bottom = (int)screenSizeInPixels.Y;
-                if (barData.uEdge == (int)ABEdge.Left)
-                {
-                    barData.rc.left = 0;
-                    barData.rc.right = (int)Math.Round(sizeInPixels.X);
-                }
-                else {
-                    barData.rc.right = (int)screenSizeInPixels.X;
-                    barData.rc.left = barData.rc.right - (int)Math.Round(sizeInPixels.X);
-                }
-            }
-            else
-            {
-                barData.rc.left = 0;
-                barData.rc.right = (int)screenSizeInPixels.X;
-                if (barData.uEdge == (int)ABEdge.Top)
-                {
-                    barData.rc.top = 0;
-                    barData.rc.bottom = (int)Math.Round(sizeInPixels.Y);
-                }
-                else {
-                    barData.rc.bottom = (int)screenSizeInPixels.Y;
-                    barData.rc.top = barData.rc.bottom - (int)Math.Round(sizeInPixels.Y);
-                }
-            }
+            barData.rc = GetRectBounds(screenBounds);
+            barData.rc = FixByEdge(barData, sizeInPixels);
 
             Interop.SHAppBarMessage((int)Interop.ABMsg.ABM_QUERYPOS, ref barData);
+            barData.rc = FixByEdge(barData, sizeInPixels);
             Interop.SHAppBarMessage((int)Interop.ABMsg.ABM_SETPOS, ref barData);
 
             // transform back to wpf units, for wpf window resizing in DoResize. 
@@ -219,6 +196,47 @@ namespace WpfAppBar
             //if we size right away, WPFs resize comes last and overrides us.
             appbarWindow.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,
                 new ResizeDelegate(DoResize), appbarWindow, rect);
+        }
+
+        private static WpfAppBar.Interop.RECT FixByEdge(Interop.APPBARDATA barData, Vector sizeInPixels)
+        {
+            switch ((ABEdge)barData.uEdge)
+            {
+                case ABEdge.Right:
+                    {
+                        barData.rc.left = barData.rc.right + (int)sizeInPixels.X;
+                        break;
+                    }
+                case ABEdge.Left:
+                    {
+                        barData.rc.right = barData.rc.left + (int)sizeInPixels.X;
+                        break;
+                    }
+                case ABEdge.Bottom:
+                    {
+                        barData.rc.top = barData.rc.bottom + (int)sizeInPixels.Y;
+                        break;
+                    }
+                case ABEdge.Top:
+                    {
+                        barData.rc.bottom = barData.rc.top + (int)sizeInPixels.Y;
+                        break;
+                    }
+            }
+
+            return barData.rc;
+        }
+
+        private static WpfAppBar.Interop.RECT GetRectBounds(System.Drawing.Rectangle screenBounds)
+        {
+            WpfAppBar.Interop.RECT rc = new Interop.RECT();
+
+            rc.left = screenBounds.Left;
+            rc.right = screenBounds.Right;
+            rc.top = screenBounds.Top;
+            rc.bottom = screenBounds.Bottom;
+
+            return rc;
         }
     }
 }
